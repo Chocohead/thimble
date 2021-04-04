@@ -8,9 +8,14 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Set;
+import java.util.AbstractMap.SimpleImmutableEntry;
+import java.util.function.Consumer;
+import java.util.regex.Pattern;
 
 import net.fabricmc.discord.bot.module.mapping.mappinglib.MappingTree;
 import net.fabricmc.discord.bot.module.mapping.mappinglib.MappingTree.ClassMapping;
@@ -170,7 +175,29 @@ final class MappingData {
 	}
 
 	private void findClasses0(String name, int namespace, Collection<ClassMapping> out) {
-		if (name.indexOf('/') >= 0) { // package present
+		if (hasWildcard(name)) { // wildcard present
+			int packageSplit = name.indexOf('/');
+
+			if (packageSplit > 0) { // package present too
+				findWildcard(() -> new Iterator<>() {
+					private final Iterator<? extends ClassMapping> it = mappingTree.getClasses().iterator();
+
+					@Override
+					public boolean hasNext() {
+						return it.hasNext();
+					}
+
+					@Override
+					public Entry<String, ClassMapping> next() {
+						ClassMapping cls = it.next();
+
+						return new SimpleImmutableEntry<>(cls.getDstName(namespace), cls);
+					}
+				}, name, out::add);
+			} else { // just a wildcard class name
+				findWildcard(classByName[namespace - MIN_NAMESPACE_ID].entrySet(), name, out::addAll);
+			}
+		} else if (name.indexOf('/') >= 0) { // package present
 			ClassMapping cls = mappingTree.getClass(name, namespace);
 			if (cls != null) out.add(cls);
 		} else if (namespace == intermediaryNs) {
@@ -187,6 +214,69 @@ final class MappingData {
 			List<ClassMapping> res = classByName[namespace - MIN_NAMESPACE_ID].get(name);
 			if (res != null) out.addAll(res);
 		}
+	}
+
+	public static boolean hasWildcard(String name) {
+		return name != null && (name.indexOf('?') >= 0 || name.indexOf('*') >= 0);
+	}
+
+	private static <T> void findWildcard(Iterable<Entry<String, T>> toSearch, String filter, Consumer<T> out) {
+		Pattern search = compileSearch(filter);
+
+		for (Entry<String, T> entry : toSearch) {
+			if (search.matcher(entry.getKey()).matches()) {
+				out.accept(entry.getValue());
+			}
+		}
+	}
+
+	private static Pattern compileSearch(String search) {
+		int end = search.length();
+		StringBuilder filter = new StringBuilder(end);
+		int last = -1;
+
+		for (int i = 0; i < end; i++) {
+			char c = search.charAt(i);
+
+			switch (c) {
+			case '*':
+				if (last >= 0) {
+					filter.append(Pattern.quote(search.substring(last, i)));
+					last = -1;
+				}
+
+				// drain any immediately subsequent asterisks
+				while (i + 1 < end && search.charAt(i + 1) == '*') i++;
+				filter.append(".*");
+				break;
+
+			case '?':
+				if (last >= 0) {
+					filter.append(Pattern.quote(search.substring(last, i)));
+					last = -1;
+				}
+
+				filter.append('.');
+				break;
+
+			case '\\': // allow escaping with \
+				if (last >= 0) {
+					filter.append(Pattern.quote(search.substring(last, i)));
+				}
+
+				last = ++i;
+				break;
+
+			default:
+				if (last < 0) last = i;
+				break;
+			}
+		}
+
+		// make sure not to leave off anything from the end
+		if (last >= 0) filter.append(Pattern.quote(search.substring(last, end)));
+
+		return Pattern.compile(filter.toString());
 	}
 
 	public Set<FieldMapping> findFields(String name) {
@@ -211,7 +301,44 @@ final class MappingData {
 	}
 
 	private void findFields0(MemberRef ref, int namespace, Collection<FieldMapping> out) {
-		if (ref.owner() != null) { // owner/package present
+		if (hasWildcard(ref.owner()) || hasWildcard(ref.name())) {
+			if (ref.owner() != null) {
+				Set<ClassMapping> owners = new HashSet<>();
+				findClasses0(ref.owner(), namespace, owners);
+
+				if (!owners.isEmpty()) {
+					findWildcard(() -> new Iterator<>() {
+						private final Iterator<? extends ClassMapping> it = owners.iterator();
+						private Iterator<? extends FieldMapping> fields = it.next().getFields().iterator();
+
+						private void nextFieldSet() {
+							fields = it.next().getFields().iterator();
+						}
+
+						@Override
+						public boolean hasNext() {
+							while (!fields.hasNext()) {
+								if (!it.hasNext()) return false;
+
+								nextFieldSet();
+							}
+
+							return true;
+						}
+
+						@Override
+						public Entry<String, FieldMapping> next() {
+							while (!fields.hasNext()) nextFieldSet();
+
+							FieldMapping field = fields.next();
+							return new SimpleImmutableEntry<>(field.getName(namespace), field);
+						}
+					}, ref.name(), out::add);
+				}
+			} else {
+				findWildcard(fieldByName[namespace - MIN_NAMESPACE_ID].entrySet(), ref.name(), out::addAll);
+			}
+		} else if (ref.owner() != null) { // owner/package present
 			Set<ClassMapping> owners = new HashSet<>();
 			findClasses0(ref.owner(), namespace, owners);
 
@@ -264,7 +391,44 @@ final class MappingData {
 	}
 
 	private void findMethods0(MemberRef ref, int namespace, Collection<MethodMapping> out) {
-		if (ref.owner() != null) { // owner/package present
+		if (hasWildcard(ref.owner()) || hasWildcard(ref.name())) {
+			if (ref.owner() != null) {
+				Set<ClassMapping> owners = new HashSet<>();
+				findClasses0(ref.owner(), namespace, owners);
+
+				if (!owners.isEmpty()) {
+					findWildcard(() -> new Iterator<>() {
+						private final Iterator<? extends ClassMapping> it = owners.iterator();
+						private Iterator<? extends MethodMapping> methods = it.next().getMethods().iterator();
+
+						private void nextMethodSet() {
+							methods = it.next().getMethods().iterator();
+						}
+
+						@Override
+						public boolean hasNext() {
+							while (!methods.hasNext()) {
+								if (!it.hasNext()) return false;
+
+								nextMethodSet();
+							}
+
+							return true;
+						}
+
+						@Override
+						public Entry<String, MethodMapping> next() {
+							while (!methods.hasNext()) nextMethodSet();
+
+							MethodMapping method = methods.next();
+							return new SimpleImmutableEntry<>(method.getName(namespace), method);
+						}
+					}, ref.name(), out::add);
+				}
+			} else {
+				findWildcard(methodByName[namespace - MIN_NAMESPACE_ID].entrySet(), ref.name(), out::addAll);
+			}
+		} else if (ref.owner() != null) { // owner/package present
 			Set<ClassMapping> owners = new HashSet<>();
 			findClasses0(ref.owner(), namespace, owners);
 
