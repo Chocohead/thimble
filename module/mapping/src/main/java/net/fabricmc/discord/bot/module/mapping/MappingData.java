@@ -301,12 +301,12 @@ final class MappingData {
 	}
 
 	private void findFields0(MemberRef ref, int namespace, Collection<FieldMapping> out) {
-		if (hasWildcard(ref.owner()) || hasWildcard(ref.name())) {
-			if (ref.owner() != null) {
-				Set<ClassMapping> owners = new HashSet<>();
-				findClasses0(ref.owner(), namespace, owners);
+		if (ref.owner() != null) { // owner/package present
+			Set<ClassMapping> owners = new HashSet<>();
+			findClasses0(ref.owner(), namespace, owners);
 
-				if (!owners.isEmpty()) {
+			if (!owners.isEmpty()) {
+				if (hasWildcard(ref.name())) {
 					findWildcard(() -> new Iterator<>() {
 						private final Iterator<? extends ClassMapping> it = owners.iterator();
 						private Iterator<? extends FieldMapping> fields = it.next().getFields().iterator();
@@ -334,23 +334,20 @@ final class MappingData {
 							return new SimpleImmutableEntry<>(field.getName(namespace), field);
 						}
 					}, ref.name(), out::add);
-				}
-			} else {
-				findWildcard(fieldByName[namespace - MIN_NAMESPACE_ID].entrySet(), ref.name(), out::addAll);
-			}
-		} else if (ref.owner() != null) { // owner/package present
-			Set<ClassMapping> owners = new HashSet<>();
-			findClasses0(ref.owner(), namespace, owners);
-
-			for (ClassMapping cls : owners) {
-				for (FieldMapping field : cls.getFields()) {
-					if (ref.name().equals(field.getName(namespace))) {
-						out.add(field);
+				} else {
+					for (ClassMapping cls : owners) {
+						for (FieldMapping field : cls.getFields()) {
+							if (ref.name().equals(field.getName(namespace))) {
+								out.add(field);
+							}
+						}
 					}
 				}
-			}
 
-			owners.clear();
+				owners.clear();
+			}
+		} else if (hasWildcard(ref.name())) {
+			findWildcard(fieldByName[namespace - MIN_NAMESPACE_ID].entrySet(), ref.name(), out::addAll);
 		} else if (namespace == intermediaryNs) {
 			String name = ref.name();
 
@@ -391,12 +388,12 @@ final class MappingData {
 	}
 
 	private void findMethods0(MemberRef ref, int namespace, Collection<MethodMapping> out) {
-		if (hasWildcard(ref.owner()) || hasWildcard(ref.name())) {
-			if (ref.owner() != null) {
-				Set<ClassMapping> owners = new HashSet<>();
-				findClasses0(ref.owner(), namespace, owners);
+		if (ref.owner() != null) { // owner/package present
+			Set<ClassMapping> owners = new HashSet<>();
+			findClasses0(ref.owner(), namespace, owners);
 
-				if (!owners.isEmpty()) {
+			if (!owners.isEmpty()) {
+				if (hasWildcard(ref.name())) {
 					findWildcard(() -> new Iterator<>() {
 						private final Iterator<? extends ClassMapping> it = owners.iterator();
 						private Iterator<? extends MethodMapping> methods = it.next().getMethods().iterator();
@@ -424,23 +421,20 @@ final class MappingData {
 							return new SimpleImmutableEntry<>(method.getName(namespace), method);
 						}
 					}, ref.name(), out::add);
-				}
-			} else {
-				findWildcard(methodByName[namespace - MIN_NAMESPACE_ID].entrySet(), ref.name(), out::addAll);
-			}
-		} else if (ref.owner() != null) { // owner/package present
-			Set<ClassMapping> owners = new HashSet<>();
-			findClasses0(ref.owner(), namespace, owners);
-
-			for (ClassMapping cls : owners) {
-				for (MethodMapping method : cls.getMethods()) {
-					if (ref.name().equals(method.getName(namespace))) {
-						out.add(method);
+				} else {
+					for (ClassMapping cls : owners) {
+						for (MethodMapping method : cls.getMethods()) {
+							if (ref.name().equals(method.getName(namespace))) {
+								out.add(method);
+							}
+						}
 					}
 				}
-			}
 
-			owners.clear();
+				owners.clear();
+			}
+		} else if (hasWildcard(ref.name())) {
+			findWildcard(methodByName[namespace - MIN_NAMESPACE_ID].entrySet(), ref.name(), out::addAll);
 		} else if (namespace == intermediaryNs) {
 			String name = ref.name();
 
