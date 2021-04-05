@@ -8,13 +8,10 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
-import java.util.AbstractMap.SimpleImmutableEntry;
-import java.util.function.Consumer;
 import java.util.regex.Pattern;
 
 import net.fabricmc.discord.bot.module.mapping.mappinglib.MappingTree;
@@ -179,26 +176,20 @@ final class MappingData {
 
 	private void findClasses0(String name, int namespace, Collection<ClassMapping> out) {
 		if (hasWildcard(name)) { // wildcard present
-			int packageSplit = name.indexOf('/');
+			Pattern search = compileSearch(name);
 
-			if (packageSplit > 0) { // package present too
-				findWildcard(() -> new Iterator<>() {
-					private final Iterator<? extends ClassMapping> it = mappingTree.getClasses().iterator();
-
-					@Override
-					public boolean hasNext() {
-						return it.hasNext();
+			if (name.indexOf('/') > 0) { // package present too
+				for (ClassMapping cls : mappingTree.getClasses()) {
+					if (search.matcher(cls.getDstName(namespace)).matches()) {
+						out.add(cls);
 					}
-
-					@Override
-					public Entry<String, ClassMapping> next() {
-						ClassMapping cls = it.next();
-
-						return new SimpleImmutableEntry<>(cls.getDstName(namespace), cls);
-					}
-				}, name, out::add);
+				}
 			} else { // just a wildcard class name
-				findWildcard(classByName[namespace - MIN_NAMESPACE_ID].entrySet(), name, out::addAll);
+				for (Entry<String, List<ClassMapping>> entry : classByName[namespace - MIN_NAMESPACE_ID].entrySet()) {
+					if (search.matcher(entry.getKey()).matches()) {
+						out.addAll(entry.getValue());
+					}
+				}
 			}
 		} else if (name.indexOf('/') >= 0) { // package present
 			ClassMapping cls = mappingTree.getClass(name, namespace);
@@ -220,16 +211,6 @@ final class MappingData {
 
 	public static boolean hasWildcard(String name) {
 		return name != null && (name.indexOf('?') >= 0 || name.indexOf('*') >= 0);
-	}
-
-	private static <T> void findWildcard(Iterable<Entry<String, T>> toSearch, String filter, Consumer<T> out) {
-		Pattern search = compileSearch(filter);
-
-		for (Entry<String, T> entry : toSearch) {
-			if (search.matcher(entry.getKey()).matches()) {
-				out.accept(entry.getValue());
-			}
-		}
 	}
 
 	private static Pattern compileSearch(String search) {
@@ -309,33 +290,15 @@ final class MappingData {
 
 			if (!owners.isEmpty()) {
 				if (hasWildcard(ref.name())) {
-					findWildcard(() -> new Iterator<>() {
-						private final Iterator<? extends ClassMapping> it = owners.iterator();
-						private Iterator<? extends FieldMapping> fields = it.next().getFields().iterator();
+					Pattern search = compileSearch(ref.name());
 
-						private void nextFieldSet() {
-							fields = it.next().getFields().iterator();
-						}
-
-						@Override
-						public boolean hasNext() {
-							while (!fields.hasNext()) {
-								if (!it.hasNext()) return false;
-
-								nextFieldSet();
+					for (ClassMapping cls : owners) {
+						for (FieldMapping field : cls.getFields()) {
+							if (search.matcher(field.getName(namespace)).matches()) {
+								out.add(field);
 							}
-
-							return true;
 						}
-
-						@Override
-						public Entry<String, FieldMapping> next() {
-							while (!fields.hasNext()) nextFieldSet();
-
-							FieldMapping field = fields.next();
-							return new SimpleImmutableEntry<>(field.getName(namespace), field);
-						}
-					}, ref.name(), out::add);
+					}
 				} else {
 					for (ClassMapping cls : owners) {
 						for (FieldMapping field : cls.getFields()) {
@@ -349,7 +312,13 @@ final class MappingData {
 				owners.clear();
 			}
 		} else if (hasWildcard(ref.name())) {
-			findWildcard(fieldByName[namespace - MIN_NAMESPACE_ID].entrySet(), ref.name(), out::addAll);
+			Pattern search = compileSearch(ref.name());
+
+			for (Entry<String, List<FieldMapping>> entry : fieldByName[namespace - MIN_NAMESPACE_ID].entrySet()) {
+				if (search.matcher(entry.getKey()).matches()) {
+					out.addAll(entry.getValue());
+				}
+			}
 		} else if (namespace == intermediaryNs) {
 			String name = ref.name();
 
@@ -396,33 +365,15 @@ final class MappingData {
 
 			if (!owners.isEmpty()) {
 				if (hasWildcard(ref.name())) {
-					findWildcard(() -> new Iterator<>() {
-						private final Iterator<? extends ClassMapping> it = owners.iterator();
-						private Iterator<? extends MethodMapping> methods = it.next().getMethods().iterator();
+					Pattern search = compileSearch(ref.name());
 
-						private void nextMethodSet() {
-							methods = it.next().getMethods().iterator();
-						}
-
-						@Override
-						public boolean hasNext() {
-							while (!methods.hasNext()) {
-								if (!it.hasNext()) return false;
-
-								nextMethodSet();
+					for (ClassMapping cls : owners) {
+						for (MethodMapping method : cls.getMethods()) {
+							if (search.matcher(method.getName(namespace)).matches()) {
+								out.add(method);
 							}
-
-							return true;
 						}
-
-						@Override
-						public Entry<String, MethodMapping> next() {
-							while (!methods.hasNext()) nextMethodSet();
-
-							MethodMapping method = methods.next();
-							return new SimpleImmutableEntry<>(method.getName(namespace), method);
-						}
-					}, ref.name(), out::add);
+					}
 				} else {
 					for (ClassMapping cls : owners) {
 						for (MethodMapping method : cls.getMethods()) {
@@ -436,7 +387,13 @@ final class MappingData {
 				owners.clear();
 			}
 		} else if (hasWildcard(ref.name())) {
-			findWildcard(methodByName[namespace - MIN_NAMESPACE_ID].entrySet(), ref.name(), out::addAll);
+			Pattern search = compileSearch(ref.name());
+
+			for (Entry<String, List<MethodMapping>> entry : methodByName[namespace - MIN_NAMESPACE_ID].entrySet()) {
+				if (search.matcher(entry.getKey()).matches()) {
+					out.addAll(entry.getValue());
+				}
+			}
 		} else if (namespace == intermediaryNs) {
 			String name = ref.name();
 
